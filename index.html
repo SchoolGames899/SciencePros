@@ -582,6 +582,64 @@
         };
       }
 
+      // --- SAVE COMPRESSION HELPERS ---
+      const compressSave = (s) => {
+          // Map long keys to short ones
+          const min = {
+              sig: "BG3D", // Unique signature for this game (shortened)
+              g: s.gold,
+              h: s.unlockedHeroes.map(x => [x.id, x.level]), // Array of arrays [id, level]
+              sh: s.selectedHeroId,
+              ua: s.unlockedAbilities,
+              ea: s.equippedAbilityId,
+              es: s.equippedSecondaryAbilityId,
+              uf: s.unlockedFeatures,
+              uw: s.unlockedWorlds,
+              cw: s.completedWorlds,
+              sw: s.selectedWorldId,
+              sk: [s.skills.vitality, s.skills.strength, s.skills.greed]
+          };
+          return btoa(JSON.stringify(min));
+      };
+
+      const decompressSave = (str) => {
+          try {
+              const decoded = atob(str);
+              const obj = JSON.parse(decoded);
+              
+              // 1. Check for New Short Format
+              if (obj.sig === "BG3D") {
+                  return {
+                      gameSignature: GAME_SIGNATURE, // restore internal long signature
+                      gold: obj.g || 0,
+                      unlockedHeroes: Array.isArray(obj.h) ? obj.h.map(x => ({id: x[0], level: x[1]})) : [],
+                      selectedHeroId: obj.sh || 'knight',
+                      unlockedAbilities: obj.ua || [],
+                      equippedAbilityId: obj.ea,
+                      equippedSecondaryAbilityId: obj.es,
+                      unlockedFeatures: obj.uf || [],
+                      unlockedWorlds: obj.uw || ['kingdom'],
+                      completedWorlds: obj.cw || [],
+                      selectedWorldId: obj.sw || 'kingdom',
+                      skills: { 
+                          vitality: obj.sk ? obj.sk[0] : 0, 
+                          strength: obj.sk ? obj.sk[1] : 0, 
+                          greed: obj.sk ? obj.sk[2] : 0 
+                      }
+                  };
+              }
+              
+              // 2. Check for Legacy/Long format (Backwards compatibility)
+              if (obj.gameSignature === GAME_SIGNATURE) {
+                  return obj;
+              }
+              
+              return null; // Invalid signature
+          } catch(e) {
+              return null;
+          }
+      };
+
       const App = () => {
         const mountRef = useRef(null);
         
@@ -1908,9 +1966,10 @@
                       <h1 className="text-4xl font-black mb-8">SAVE DATA MANAGEMENT</h1>
                       <div className="flex flex-col gap-4 w-96">
                           <button onClick={() => {
-                              const dataStr = btoa(JSON.stringify(saveData));
+                              // USE COMPRESSED SAVE
+                              const dataStr = compressSave(saveData);
                               navigator.clipboard.writeText(dataStr);
-                              alert("Save code copied to clipboard!");
+                              alert("Short save code copied to clipboard!");
                           }} className="bg-blue-600 hover:bg-blue-500 p-4 rounded font-bold">EXPORT SAVE TO CLIPBOARD</button>
                           
                           <div className="flex gap-2">
@@ -1922,32 +1981,14 @@
                                   className="flex-1 bg-slate-800 border border-slate-600 rounded p-2 text-white"
                               />
                               <button onClick={() => {
-                                  try {
-                                      const json = atob(saveKeyInput);
-                                      const parsed = JSON.parse(json);
-                                      
-                                      let isValid = false;
-                                      if (parsed && typeof parsed === 'object') {
-                                          if (parsed.gameSignature === GAME_SIGNATURE) {
-                                              isValid = true;
-                                          } 
-                                          else if (typeof parsed.gold === 'number' && 
-                                                  Array.isArray(parsed.unlockedHeroes) && 
-                                                  parsed.unlockedHeroes.some((h) => h.id === 'knight')) {
-                                              parsed.gameSignature = GAME_SIGNATURE; 
-                                              isValid = true;
-                                          }
-                                      }
-
-                                      if (isValid) {
-                                          setSaveData(parsed);
-                                          alert("Save loaded successfully!");
-                                          setAppMode('MENU');
-                                      } else {
-                                          alert("Invalid Save Data: This key belongs to a different game or is corrupted.");
-                                      }
-                                  } catch (e) {
-                                      alert("Error loading save. Invalid format.");
+                                  // USE DECOMPRESSED SAVE
+                                  const importedData = decompressSave(saveKeyInput);
+                                  if (importedData) {
+                                      setSaveData(importedData);
+                                      alert("Save loaded successfully!");
+                                      setAppMode('MENU');
+                                  } else {
+                                      alert("Invalid Save Data: This key belongs to a different game or is corrupted.");
                                   }
                               }} className="bg-green-600 hover:bg-green-500 px-4 rounded font-bold">IMPORT</button>
                           </div>
